@@ -1,0 +1,281 @@
+.frs-page-container {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.thresh-slider-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #0d1527;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.74rem;
+  color: var(--text-sub);
+}
+
+.thresh-slider-box input[type="range"] {
+  width: 90px;
+  cursor: pointer;
+  accent-color: var(--cyan-primary);
+}
+
+/* Stats */
+.frs-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.frs-kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Split Grid */
+.frs-content-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+}
+
+.frs-gallery-panel, .frs-inspector-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.face-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.face-profile-card {
+  background: #0d1527;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.face-profile-card:hover {
+  background: rgba(0, 242, 254, 0.05);
+  border-color: rgba(0, 242, 254, 0.4);
+}
+
+.selected-face {
+  background: rgba(0, 242, 254, 0.08) !important;
+  border-color: var(--cyan-primary) !important;
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.2);
+}
+
+.crit-face {
+  border-color: rgba(255, 59, 59, 0.4);
+}
+
+.face-avatar-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.avatar-initials {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+
+.bg-green {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--green-online);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.bg-red {
+  background: rgba(255, 59, 59, 0.15);
+  color: var(--red-alert);
+  border: 1px solid rgba(255, 59, 59, 0.3);
+}
+
+.bg-sub {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-sub);
+  border: 1px solid var(--border-color);
+}
+
+.face-status-badge {
+  font-size: 0.52rem;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.badge-green {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--green-online);
+}
+
+.badge-red {
+  background: rgba(255, 59, 59, 0.2);
+  color: var(--red-alert);
+}
+
+.badge-sub {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-sub);
+}
+
+.face-card-details {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.face-name {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.face-role {
+  font-size: 0.68rem;
+  color: var(--text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.face-meta-row {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+/* Biometric HUD */
+.biometric-hud-box {
+  background: #080e1d;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.biometric-crop-frame {
+  height: 160px;
+  background: radial-gradient(circle at center, #101e38, #050a14);
+  border-radius: 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.scanline-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--cyan-primary);
+  box-shadow: 0 0 12px var(--cyan-primary);
+  animation: scanline 2.5s infinite linear;
+}
+
+@keyframes scanline {
+  0% { top: 0%; opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { top: 100%; opacity: 0.2; }
+}
+
+.corner-bracket {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--cyan-primary);
+}
+
+.top-left { top: 8px; left: 8px; border-top: 2px solid; border-left: 2px solid; }
+.top-right { top: 8px; right: 8px; border-top: 2px solid; border-right: 2px solid; }
+.bottom-left { bottom: 8px; left: 8px; border-bottom: 2px solid; border-left: 2px solid; }
+.bottom-right { bottom: 8px; right: 8px; border-bottom: 2px solid; border-right: 2px solid; }
+
+.biometric-hud-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.72rem;
+}
+
+.stat-line {
+  display: flex;
+  justify-content: space-between;
+}
+
+.stat-line .k { color: var(--text-muted); }
+.stat-line .v { font-weight: 700; }
+
+.photo-drop-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.01);
+  text-align: center;
+  cursor: pointer;
+  color: var(--text-sub);
+  font-size: 0.78rem;
+}
+
+.photo-drop-zone:hover {
+  border-color: var(--cyan-primary);
+  background: rgba(0, 242, 254, 0.03);
+}
+
+@media (max-width: 1024px) {
+  .frs-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .frs-content-grid {
+    grid-template-columns: 1fr;
+  }
+  .face-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}

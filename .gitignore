@@ -1,0 +1,56 @@
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Python & Virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/.venv/
+.venv/
+venv/
+ENV/
+env/
+
+# Databases & Runtime Data
+*.db
+*.sqlite
+*.sqlite3
+data/snapshots/
+data/videos/
+snapshots/
+*.mp4
+*.avi
+
+# Large Models & Weights (Downloaded at runtime)
+*.pt
+*.onnx
+models/*.pt
+models/*.onnx
+yolov8n.pt
+yolov8n-pose.pt
+
+# Temporary folders
+untitled folder 2/
+"untitled folder 2"/
+
+# IDE & OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.sw?
