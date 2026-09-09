@@ -135,7 +135,9 @@ class PoseBehaviorAnalyzer:
     def classify_activity(
         cls,
         bbox: List[int],
-        keypoints: Optional[np.ndarray],
+        keypoints: Optional[np.ndarray] = None,
+        prev_box: Optional[List[int]] = None,
+        time_delta: float = 0.1,
         history: Optional[List[Tuple[float, float, float]]] = None
     ) -> Dict[str, Any]:
         """
@@ -149,7 +151,8 @@ class PoseBehaviorAnalyzer:
                 "activity": "CRAWLING",
                 "confidence": crawl_conf,
                 "is_suspicious": True,
-                "description": "Prone / Crawling low-profile incursion"
+                "description": "Prone / Crawling low-profile incursion",
+                "details": {"posture": "crawling", "confidence": crawl_conf}
             }
 
         # 2. Check Fence Climbing
@@ -159,7 +162,8 @@ class PoseBehaviorAnalyzer:
                 "activity": "CLIMBING",
                 "confidence": climb_conf,
                 "is_suspicious": True,
-                "description": "Perimeter fence scaling behavior"
+                "description": "Perimeter fence scaling behavior",
+                "details": {"posture": "climbing", "confidence": climb_conf}
             }
 
         # 3. Check Crouching
@@ -169,23 +173,41 @@ class PoseBehaviorAnalyzer:
                 "activity": "CROUCHING",
                 "confidence": crouch_conf,
                 "is_suspicious": True,
-                "description": "Tactical crouching / concealment stance"
+                "description": "Tactical crouching / concealment stance",
+                "details": {"posture": "crouching", "confidence": crouch_conf}
             }
 
         # 4. Check Running / Sprint velocity
-        if history and len(history) >= 3:
-            vel = cls.calculate_velocity(history)
-            if vel > 85.0:  # High speed threshold in pixel/sec
-                return {
-                    "activity": "RUNNING",
-                    "confidence": min(0.95, vel / 120.0),
-                    "is_suspicious": True,
-                    "description": f"Rapid rush / sprint intrusion ({vel:.1f} px/s)"
-                }
+        speed = 0.0
+        if history and len(history) >= 2:
+            speed = cls.calculate_velocity(history)
+        elif prev_box is not None and time_delta > 0:
+            c1_x, c1_y = (prev_box[0] + prev_box[2]) / 2.0, (prev_box[1] + prev_box[3]) / 2.0
+            c2_x, c2_y = (bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0
+            dist = math.hypot(c2_x - c1_x, c2_y - c1_y)
+            speed = dist / max(1e-3, time_delta)
+
+        if speed > 85.0:  # High speed threshold in pixel/sec
+            return {
+                "activity": "RUNNING",
+                "confidence": min(0.98, max(0.70, speed / 120.0)),
+                "is_suspicious": True,
+                "description": f"Rapid rush / sprint intrusion ({speed:.1f} px/s)",
+                "details": {"speed_px_sec": round(speed, 1)}
+            }
+        elif speed > 15.0:
+            return {
+                "activity": "WALKING",
+                "confidence": 0.90,
+                "is_suspicious": False,
+                "description": "Upright pedestrian movement",
+                "details": {"speed_px_sec": round(speed, 1)}
+            }
 
         return {
-            "activity": "WALKING",
+            "activity": "STANDING",
             "confidence": 0.90,
             "is_suspicious": False,
-            "description": "Upright normal pedestrian movement"
+            "description": "Stationary / upright posture",
+            "details": {"speed_px_sec": round(speed, 1)}
         }

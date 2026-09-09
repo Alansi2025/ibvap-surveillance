@@ -76,6 +76,7 @@ class CameraPipeline:
         self.active_tracks: Dict[int, float] = {}  # track_id -> last_seen_ts
         self.entry_times: Dict[int, float] = {}    # track_id -> first_seen_ts
         self.positions_history: Dict[int, List[Tuple[float, float, float]]] = {}  # track_id -> [(x, y, t), ...]
+        self.box_history: Dict[int, Tuple[List[int], float]] = {}  # track_id -> (box, timestamp)
         self.alerted_events: Set[str] = set()
         self.frame_idx: int = 0
         self.cached_detections: List[Dict[str, Any]] = []
@@ -147,25 +148,35 @@ class CameraPipeline:
         severity: str,
         description: str,
         track_id: Optional[int] = None,
-        target_class: str = "person",
-        confidence: float = 1.0,
+        target_class: Optional[str] = None,
+        confidence: float = 0.90,
         frame: Optional[np.ndarray] = None,
         metadata: Optional[Dict[str, Any]] = None
     ):
         clean_track_id = int(track_id) if track_id is not None else None
-        event_key = f"{self.camera_id}_{category}_{clean_track_id}_{int(time.time() // 6)}"
-        if event_key in self.alerted_events:
-            return
-        self.alerted_events.add(event_key)
+        alert_key = f"{self.camera_id}:{category}:{clean_track_id}"
+        now = time.time()
 
+        if alert_key in self.alerted_events:
+            return
+
+        self.alerted_events.add(alert_key)
+        # Cooldown timer to re-trigger after 45 seconds for same track
+        def _clear_alert_cooldown():
+            time.sleep(45.0)
+            self.alerted_events.discard(alert_key)
+        threading.Thread(target=_clear_alert_cooldown, daemon=True).start()
+
+        # Save snapshot
         snapshot_filename = None
         if frame is not None:
-            snapshot_filename = f"snap_{self.camera_id}_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
-            snap_path = settings.SNAPSHOTS_PATH / snapshot_filename
             try:
-                cv2.imwrite(str(snap_path), frame)
+                snapshots_dir = Path("data/snapshots")
+                snapshots_dir.mkdir(parents=True, exist_ok=True)
+                snapshot_filename = f"{self.camera_id}_{category}_{int(now)}_{clean_track_id or 0}.jpg"
+                cv2.imwrite(str(snapshots_dir / snapshot_filename), frame)
             except Exception as e:
-                logger.error("Failed to save snapshot: %s", e)
+                logger.error("Failed to save alert snapshot: %s", e)
 
         db = SessionLocal()
         alert_dict = None
@@ -252,9 +263,31 @@ class CameraPipeline:
                 thick = 1
                 tag = f"ANIMAL: {cls_name}"
             elif cls_name == "person":
-                color = (0, 240, 255)
-                thick = 2
-                tag = f"TARGET #{tid} ({cls_name})"
+                activity = d.get("activity")
+                if activity == "CRAWLING":
+                    color = (0, 0, 255)
+                    thick = 3
+                    tag = f"⚠ TARGET #{tid} [CRAWLING] ({conf:.2f})"
+                elif activity == "CLIMBING":
+                    color = (0, 0, 255)
+                    thick = 3
+                    tag = f"⚠ TARGET #{tid} [CLIMBING] ({conf:.2f})"
+                elif activity == "CROUCHING":
+                    color = (0, 140, 255)
+                    thick = 2
+                    tag = f"TARGET #{tid} [CROUCHING] ({conf:.2f})"
+                elif activity == "RUNNING":
+                    color = (0, 200, 255)
+                    thick = 2
+                    tag = f"TARGET #{tid} [RUNNING] ({conf:.2f})"
+                elif activity == "WALKING":
+                    color = (0, 255, 180)
+                    thick = 2
+                    tag = f"TARGET #{tid} [WALKING] ({conf:.2f})"
+                else:
+                    color = (0, 240, 255)
+                    thick = 2
+                    tag = f"TARGET #{tid} ({cls_name})"
             else:
                 color = (200, 200, 200)
                 thick = 1
@@ -263,6 +296,22 @@ class CameraPipeline:
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, thick)
             cv2.putText(frame, tag, (x1, max(20, y1 - 8)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.46, color, 1)
+
+            # Skeletal keypoint joint & limb overlay if present
+            kpts = d.get("keypoints")
+            if kpts is not None and len(kpts) > 0:
+                for p1_idx, p2_idx in [
+                    (0, 1), (0, 2), (1, 3), (2, 4), (5, 6), (5, 7), (7, 9),
+                    (6, 8), (8, 10), (5, 11), (6, 12), (11, 12), (11, 13),
+                    (13, 15), (12, 14), (14, 16)
+                ]:
+                    if p1_idx < len(kpts) and p2_idx < len(kpts):
+                        kp1, kp2 = kpts[p1_idx], kpts[p2_idx]
+                        if len(kp1) >= 2 and len(kp2) >= 2 and kp1[0] > 0 and kp2[0] > 0:
+                            cv2.line(frame, (int(kp1[0]), int(kp1[1])), (int(kp2[0]), int(kp2[1])), (0, 255, 255), 2)
+                for kp in kpts:
+                    if len(kp) >= 2 and kp[0] > 0 and kp[1] > 0:
+                        cv2.circle(frame, (int(kp[0]), int(kp[1])), 3, (0, 0, 255), -1)
 
     def _run_loop(self):
         # Open video source (file, rtsp, or device index)
@@ -505,8 +554,80 @@ class CameraPipeline:
                                             metadata={"tripwire_name": zone.get("name")}
                                         )
 
-                            # 2. Human Behavioral Analytics (Loitering, Crawling, FRS)
+                            # 2. Human Behavioral Analytics (Loitering, Crawling, Climbing, Crouching, Sprinting, FRS)
                             if cls_name == "person" and self.pose_enabled:
+                                # Previous position / velocity tracking for kinematics
+                                prev_entry = self.box_history.get(tid)
+                                prev_box, prev_t = prev_entry if prev_entry else (None, 0.0)
+                                dt = max(0.01, now - prev_t) if prev_t > 0 else 0.1
+                                
+                                act_res = self.pose_analyzer.classify_activity(
+                                    box=box.tolist(),
+                                    keypoints=None,
+                                    prev_box=prev_box,
+                                    time_delta=dt
+                                )
+                                self.box_history[tid] = (box.tolist(), now)
+                                
+                                activity = act_res.get("activity", "STANDING")
+                                act_conf = act_res.get("confidence", 0.90)
+                                details = act_res.get("details", {})
+                                
+                                # Update cached detection with detected activity
+                                if new_cached and new_cached[-1]["track_id"] == tid:
+                                    new_cached[-1]["activity"] = activity
+
+                                # Tactical Infiltration Postures
+                                if activity == "CRAWLING":
+                                    self.record_alert(
+                                        category="PRONE_CRAWLING",
+                                        title="Tactical Threat: Crawling Infiltration Posture",
+                                        severity="CRITICAL",
+                                        description=f"Target #{tid} in tactical crawling posture at border perimeter.",
+                                        track_id=tid,
+                                        target_class="person",
+                                        confidence=act_conf,
+                                        frame=proc_frame,
+                                        metadata={"posture": "crawling", "details": details}
+                                    )
+                                elif activity == "CLIMBING":
+                                    self.record_alert(
+                                        category="FENCE_CLIMBING",
+                                        title="Tactical Alert: Perimeter Fence Climbing",
+                                        severity="CRITICAL",
+                                        description=f"Target #{tid} detected climbing physical/virtual perimeter barrier.",
+                                        track_id=tid,
+                                        target_class="person",
+                                        confidence=act_conf,
+                                        frame=proc_frame,
+                                        metadata={"posture": "climbing", "details": details}
+                                    )
+                                elif activity == "CROUCHING":
+                                    self.record_alert(
+                                        category="CROUCHING_CONCEALMENT",
+                                        title="Tactical Warning: Low-Profile Concealment Posture",
+                                        severity="HIGH",
+                                        description=f"Target #{tid} adopting low-profile crouching posture in buffer sector.",
+                                        track_id=tid,
+                                        target_class="person",
+                                        confidence=act_conf,
+                                        frame=proc_frame,
+                                        metadata={"posture": "crouching", "details": details}
+                                    )
+                                elif activity == "RUNNING":
+                                    speed = details.get("speed_px_sec", 0)
+                                    self.record_alert(
+                                        category="RAPID_BORDER_SPRINT",
+                                        title="Tactical Alert: Rapid Sprint Infiltration",
+                                        severity="HIGH",
+                                        description=f"Target #{tid} sprinting at high velocity ({speed:.1f} px/s) across sector.",
+                                        track_id=tid,
+                                        target_class="person",
+                                        confidence=act_conf,
+                                        frame=proc_frame,
+                                        metadata={"posture": "running", "details": details}
+                                    )
+
                                 # Loitering Check
                                 dwell_time = now - self.entry_times[tid]
                                 if dwell_time > settings.LOITERING_SECONDS_THRESH:
@@ -520,21 +641,6 @@ class CameraPipeline:
                                         confidence=0.92,
                                         frame=proc_frame,
                                         metadata={"dwell_time_sec": round(dwell_time, 1)}
-                                    )
-
-                                # Crawling / Prone Infiltration Check
-                                is_crawling, pose_conf = self.pose_analyzer.is_prone_or_crawling(box, None)
-                                if is_crawling:
-                                    self.record_alert(
-                                        category="PRONE_CRAWLING",
-                                        title="Tactical Threat: Crawling Infiltration Posture",
-                                        severity="CRITICAL",
-                                        description=f"Target #{tid} in tactical crawling posture at border perimeter.",
-                                        track_id=tid,
-                                        target_class="person",
-                                        confidence=pose_conf,
-                                        frame=proc_frame,
-                                        metadata={"posture": "prone_crawling"}
                                     )
 
                                 # Face Recognition Check
@@ -558,24 +664,42 @@ class CameraPipeline:
                                                 metadata=face_res
                                             )
 
-                            # 3. Vehicle & ANPR Analytics
+                            # 3. Vehicle & ANPR Analytics (EasyOCR + Fuzzy Watchlist Matching)
                             if cls_name in settings.VEHICLE_CLASSES and self.anpr_enabled:
                                 veh_crop = proc_frame[max(0, y1):min(proc_frame.shape[0], y2),
                                                       max(0, x1):min(proc_frame.shape[1], x2)]
                                 anpr_res = self.anpr_engine.process_vehicle(veh_crop, cls_name)
                                 if anpr_res:
                                     plate_no = anpr_res["plate_number"]
-                                    self.record_alert(
-                                        category="ANPR_BLACKLIST_HIT",
-                                        title=f"ANPR Vehicle Detection: {plate_no}",
-                                        severity="HIGH",
-                                        description=f"Vehicle ({cls_name}) intercepted. Plate: {plate_no}",
-                                        track_id=tid,
-                                        target_class=cls_name,
-                                        confidence=anpr_res["confidence"],
-                                        frame=proc_frame,
-                                        metadata={"plate_number": plate_no}
-                                    )
+                                    is_blacklisted = anpr_res.get("is_blacklisted", False)
+                                    fuzzy = anpr_res.get("fuzzy_match")
+
+                                    if is_blacklisted or fuzzy:
+                                        target_ref = fuzzy.get("matched_plate") if fuzzy else plate_no
+                                        owner = (fuzzy.get("metadata") or {}).get("owner", "Watchlist Vehicle") if fuzzy else "Hotlist"
+                                        self.record_alert(
+                                            category="ANPR_BLACKLIST_HIT",
+                                            title=f"ANPR Watchlist Incursion: {plate_no} (Match: {target_ref})",
+                                            severity="CRITICAL",
+                                            description=f"Wanted vehicle intercepted at checkpoint. Class: {cls_name}, Matched: {target_ref} ({owner})",
+                                            track_id=tid,
+                                            target_class=cls_name,
+                                            confidence=anpr_res["confidence"],
+                                            frame=proc_frame,
+                                            metadata=anpr_res
+                                        )
+                                    else:
+                                        self.record_alert(
+                                            category="ANPR_VEHICLE_LOG",
+                                            title=f"ANPR Vehicle Logged: {plate_no}",
+                                            severity="INFO",
+                                            description=f"Vehicle ({cls_name}) registered at checkpoint. Plate: {plate_no}",
+                                            track_id=tid,
+                                            target_class=cls_name,
+                                            confidence=anpr_res["confidence"],
+                                            frame=proc_frame,
+                                            metadata={"plate_number": plate_no}
+                                        )
                     if new_cached:
                         with self.frame_lock:
                             self.cached_detections = new_cached

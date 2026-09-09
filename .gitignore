@@ -47,6 +47,8 @@ yolov8n-pose.pt
 # Temporary folders
 untitled folder 2/
 "untitled folder 2"/
+sih/
+"SIH (AI + Backend).py"
 
 # IDE & OS
 .vscode/*
@@ -54,3 +56,4 @@ untitled folder 2/
 .idea/
 .DS_Store
 *.sw?
+
